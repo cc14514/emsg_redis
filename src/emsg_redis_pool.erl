@@ -3,115 +3,83 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/1]).
+-export([start_link/1,get_conn/1,return_conn/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--record(state, {}).
+-record(state, {pool,host,port,size}).
+
+%% 清理连接的时间间隔
+-define(CleanTime,1000*60*2).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
-
-%%--------------------------------------------------------------------
-%% @doc
-%% Starts the server
-%%
-%% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
-%% @end
-%%--------------------------------------------------------------------
 start_link({Name,Args}) ->
     gen_server:start_link({local, Name}, ?MODULE, [Args], []).
+
+%% 获取一个连接
+get_conn(PoolName)->
+	gen_server:call(PoolName,get_conn).
+
+%% 归还一个连接
+return_conn(PoolName,Conn) ->
+	gen_server:cast(PoolName,{return_conn,Conn}).
 
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
-
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Initializes the server
-%%
-%% @spec init(Args) -> {ok, State} |
-%%                     {ok, State, Timeout} |
-%%                     ignore |
-%%                     {stop, Reason}
-%% @end
-%%--------------------------------------------------------------------
+%% [{host,"192.168.2.12"},{port,6379},{size,10}]
 init([Args]) ->
-	io:format("init ::> ~p~n",[Args]),
-    {ok, #state{}}.
+	io:format("emsg_redis_pool__init ::> ~p~n",[Args]),
+	Conf = dict:from_list(Args),
+	{ok,Host} = dict:find(host,Conf),
+	{ok,Port} = dict:find(port,Conf),
+	{ok,Size} = dict:find(size,Conf),
+	Pool = build_pool(Size,Host,Port,queue:new()),									
+	io:format("emsg_redis_pool__init ::> ~p~n",[Pool]),
+    { ok , #state{host=Host,port=Port,size=Size,pool=Pool} , ?CleanTime }.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Handling call messages
-%%
-%% @spec handle_call(Request, From, State) ->
-%%                                   {reply, Reply, State} |
-%%                                   {reply, Reply, State, Timeout} |
-%%                                   {noreply, State} |
-%%                                   {noreply, State, Timeout} |
-%%                                   {stop, Reason, Reply, State} |
-%%                                   {stop, Reason, State}
-%% @end
-%%--------------------------------------------------------------------
-handle_call(_Request, _From, State) ->
-    Reply = ok,
-    {reply, Reply, State}.
+handle_call(_Request, _From, #state{host=H,port=P,pool=Pool}=State) ->
+	case queue:out(Pool) of 
+		{empty,_} ->
+			%% Reply = {ok,Conn} | {error,Reason}
+			Reply = new_conn(H,P),
+    		{reply, Reply, State,?CleanTime};
+		{{value,Conn},Pool2} ->
+    		{reply, {ok,Conn}, State#state{pool=Pool2},?CleanTime} 
+	end.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Handling cast messages
-%%
-%% @spec handle_cast(Msg, State) -> {noreply, State} |
-%%                                  {noreply, State, Timeout} |
-%%                                  {stop, Reason, State}
-%% @end
-%%--------------------------------------------------------------------
-handle_cast(_Msg, State) ->
-    {noreply, State}.
+handle_cast({return_conn,Conn}, #state{pool=Pool}=State) ->
+    {noreply,State#state{pool=queue:in(Conn,Pool)},?CleanTime};
+handle_cast(_Msg, State) -> {noreply, State,?CleanTime}.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Handling all non call/cast messages
-%%
-%% @spec handle_info(Info, State) -> {noreply, State} |
-%%                                   {noreply, State, Timeout} |
-%%                                   {stop, Reason, State}
-%% @end
-%%--------------------------------------------------------------------
+
+handle_info(timeout, State) ->
+    {noreply, State, ?CleanTime};
 handle_info(_Info, State) ->
-    {noreply, State}.
+    {noreply, State, ?CleanTime}.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% This function is called by a gen_server when it is about to
-%% terminate. It should be the opposite of Module:init/1 and do any
-%% necessary cleaning up. When it returns, the gen_server terminates
-%% with Reason. The return value is ignored.
-%%
-%% @spec terminate(Reason, State) -> void()
-%% @end
-%%--------------------------------------------------------------------
-terminate(_Reason, _State) ->
-    ok.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Convert process state when code is changed
-%%
-%% @spec code_change(OldVsn, State, Extra) -> {ok, NewState}
-%% @end
-%%--------------------------------------------------------------------
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
+
+terminate(_Reason, _State) -> ok.
+
+code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+build_pool(N,H,P,Q) when N > 0 ->
+	{ok,Conn} = new_conn(H,P),
+	Q2 = queue:in(Conn,Q),
+	io:format("~p~n",[Q2]),
+	build_pool(N-1,H,P,Q2);
+build_pool(0,_,_,Q) ->
+	Q.
+
+%% TODO 创建连接 
+new_conn(H,P) ->
+	{ok,{H,P}}.
+
