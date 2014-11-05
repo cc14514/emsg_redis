@@ -53,11 +53,11 @@ handle_call(_Request, _From, #state{host=H,port=P,pool=Pool}=State) ->
 
 handle_cast({return_conn,Conn}, #state{pool=Pool}=State) ->
     {noreply,State#state{pool=queue:in(Conn,Pool)},?CleanTime};
-handle_cast(_Msg, State) -> {noreply, State,?CleanTime}.
+handle_cast(_Msg, State) -> {noreply, State, ?CleanTime}.
 
 
-handle_info(timeout, State) ->
-    {noreply, State, ?CleanTime};
+handle_info(timeout,#state{pool=Pool,size=Size}=State) ->
+    {noreply, State#state{pool=free(Pool,Size)}, ?CleanTime};
 handle_info(_Info, State) ->
     {noreply, State, ?CleanTime}.
 
@@ -83,3 +83,6 @@ build_pool(0,_,_,Q) ->
 new_conn(H,P) ->
 	{ok,{H,P}}.
 
+%% TODO 释放连接，如果连接数超过 Size
+free(Pool,_Size) ->
+	Pool.
