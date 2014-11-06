@@ -10,7 +10,7 @@
 
 %% Default timeout for calls to the client gen_server
 %% Specified in http://www.erlang.org/doc/man/gen_server.html#call-3
--define(TIMEOUT, 5000).
+-define(TIMEOUT,10000).
 
 -export([start/0, stop/0]).
 
@@ -34,7 +34,8 @@ q(Command) ->
     {ok, binary() | [binary()]} | {error, Reason::binary()}.
 q(Command = [_, Key|_], Timeout) ->
     Node = sharded_eredis_chash:lookup(Key),
-    poolboy:transaction(Node, fun(Worker) -> 
-		eredis:q(Worker, Command, Timeout) 
-	end).
+	{ok,Conn} = emsg_redis_pool:checkout(Node),
+	Rtn = eredis:q(Conn, Command, Timeout),
+	emsg_redis_pool:checkin(Node,Conn),
+	Rtn.
 
