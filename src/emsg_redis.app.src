@@ -1,0 +1,17 @@
+%%%-------------------------------------------------------------------
+%%% @author Jeremy Ong <jeremy@playmesh.com>
+%%% @copyright (C) 2012, PlayMesh, Inc.
+%%%-------------------------------------------------------------------
+
+{application, emsg_redis,
+ [
+  {description, ""},
+  {vsn, "1.1"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {mod, { emsg_redis_app, []}},
+  {env, []}
+]}.
