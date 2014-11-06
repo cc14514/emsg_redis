@@ -42,10 +42,10 @@ init([Args]) ->
 handle_call(checkout, _From, #state{host=H,port=P,pool=Pool}=State) ->
 	case queue:out(Pool) of 
 		{empty,_} ->
-			%% Reply = {ok,Conn} | {error,Reason}
     		{reply, new_conn(H,P), State,?CleanTime};
 		{{value,Conn},Pool2} ->
-    		{reply, {ok,Conn}, State#state{pool=Pool2},?CleanTime} 
+			Pool3 = queue:in(Conn,Pool2),
+    		{reply, {ok,Conn}, State#state{pool=Pool3},?CleanTime} 
 	end.
 
 handle_cast({checkin,Conn}, #state{size=Size,pool=Pool}=State) ->

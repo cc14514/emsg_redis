@@ -35,7 +35,6 @@ q(Command) ->
 q(Command = [_, Key|_], Timeout) ->
     Node = emsg_redis_chash:lookup(Key),
 	{ok,Conn} = emsg_redis_pool:checkout(Node),
-	Rtn = eredis:q(Conn, Command, Timeout),
-	emsg_redis_pool:checkin(Node,Conn),
-	Rtn.
+	eredis:q(Conn, Command, Timeout).
+	%% emsg_redis_pool:checkin(Node,Conn),
 
