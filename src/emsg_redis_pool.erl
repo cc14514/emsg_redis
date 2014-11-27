@@ -36,7 +36,7 @@ init([Args]) ->
 	{ok,Host} = dict:find(host,Conf),
 	{ok,Port} = dict:find(port,Conf),
 	{ok,Size} = dict:find(size,Conf),
-	Pool = build_pool(Size,Host,Port,queue:new()),									
+	{ok,Pool} = build_pool(Size,Host,Port,queue:new()),									
     { ok , #state{host=Host,port=Port,size=Size,pool=Pool} , ?CleanTime }.
 
 handle_call(checkout, _From, #state{host=H,port=P,pool=Pool}=State) ->
@@ -76,14 +76,28 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 %%% Internal functions
 %%%===================================================================
 
-build_pool(N,H,P,Q) when N > 0 ->
-	{ok,Conn} = new_conn(H,P),
-	build_pool(N-1,H,P,queue:in(Conn,Q));
-build_pool(0,_,_,Q) ->
-	Q.
+build_pool(N,H,P,Q) ->
+	build_pool(N,H,P,Q,0).	
+
+build_pool(N,H,P,Q,ErrorCounter) when N > 0 ->
+	case new_conn(H,P) of
+		{ok,Conn}-> 
+			build_pool(N-1,H,P,queue:in(Conn,Q),0);
+		_ ->
+			case ErrorCounter > 30 of
+				false ->
+					timer:sleep(100),
+					build_pool(N,H,P,Q,ErrorCounter+1);
+				true ->
+					{error,can_not_link_to_redis}
+			end
+	end;
+build_pool(0,_,_,Q,_) ->
+	{ok,Q}.
 
 %% TODO 创建连接 
 new_conn(H,P) ->
+	timer:sleep(5),
 	eredis:start_link(H,P).
 
 close_conn(Conn) ->
