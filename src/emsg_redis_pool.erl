@@ -8,7 +8,7 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--record(state, {pool,host,port,size}).
+-record(state, {pool=queue:new(),host,port,size}).
 
 %% 清理连接的时间间隔
 -define(CleanTime,1000*60*2).
@@ -36,16 +36,27 @@ init([Args]) ->
 	{ok,Host} = dict:find(host,Conf),
 	{ok,Port} = dict:find(port,Conf),
 	{ok,Size} = dict:find(size,Conf),
-	{ok,Pool} = build_pool(Size,Host,Port,queue:new()),									
-    { ok , #state{host=Host,port=Port,size=Size,pool=Pool} , ?CleanTime }.
+	%% 2014-12-18 : 调整为被动模式
+	%% {ok,Pool} = build_pool(Size,Host,Port,queue:new()),									
+    { ok , #state{host=Host,port=Port,size=Size} , ?CleanTime }.
 
-handle_call(checkout, _From, #state{host=H,port=P,pool=Pool}=State) ->
-	case queue:out(Pool) of 
-		{empty,_} ->
-    		{reply, new_conn(H,P), State,?CleanTime};
-		{{value,Conn},Pool2} ->
-			Pool3 = queue:in(Conn,Pool2),
-    		{reply, {ok,Conn}, State#state{pool=Pool3},?CleanTime} 
+%% 2014-12-18 : 为了避免初始化时发生超时，需要将连接池的初始化改称被动的
+handle_call(checkout, _From, #state{size=Size,host=H,port=P,pool=Pool}=State) ->
+	Current_size = queue:len(Pool),
+	case Current_size < Size of
+		true ->
+			%% 创建连接并缓存到池里
+			Conn = new_conn(H,P),
+			error_logger:info_msg("emsg_redis_pool append_conn_to_pool current_size=~p ; size=~p",[Current_size,Size]),
+			{reply, Conn, State#state{pool=queue:in(Conn,Pool)},?CleanTime};
+		_ ->
+			case queue:out(Pool) of 
+				{empty,_} ->
+    				{reply, new_conn(H,P), State,?CleanTime};
+				{{value,Conn},Pool2} ->
+					Pool3 = queue:in(Conn,Pool2),
+    				{reply, {ok,Conn}, State#state{pool=Pool3},?CleanTime} 
+			end 
 	end.
 
 handle_cast({checkin,Conn}, #state{size=Size,pool=Pool}=State) ->
@@ -97,7 +108,7 @@ build_pool(0,_,_,Q,_) ->
 
 %% TODO 创建连接 
 new_conn(H,P) ->
-	timer:sleep(5),
+	%% timer:sleep(5),
 	eredis:start_link(H,P).
 
 close_conn(Conn) ->
