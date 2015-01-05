@@ -48,7 +48,7 @@ handle_call(checkout, _From, #state{size=Size,host=H,port=P,pool=Pool}=State) ->
 			%% 创建连接并缓存到池里
 			{ok,Conn} = new_conn(H,P),
 			error_logger:info_msg("emsg_redis_pool append_conn_to_pool current_size=~p ; size=~p",[Current_size,Size]),
-			{reply, Conn, State#state{pool=queue:in(Conn,Pool)},?CleanTime};
+			{reply, {ok,Conn}, State#state{pool=queue:in(Conn,Pool)},?CleanTime};
 		_ ->
 			case queue:out(Pool) of 
 				{empty,_} ->
